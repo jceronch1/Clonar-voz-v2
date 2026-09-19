@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clonador de voz local · Qwen3-TTS</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+</head>
+<body>
+
+<header class="cabecera">
+  <div class="marca">
+    <span class="logo">🎙️</span>
+    <div>
+      <h1>Clonador de voz local</h1>
+      <p class="sub">Qwen3-TTS 1.7B · llama.cpp · CPU y GPU · sin conexión</p>
+    </div>
+  </div>
+  <div id="pastillas" class="pastillas"></div>
+</header>
+
+<div id="aviso" class="aviso oculto"></div>
+
+<!-- ========== Primer arranque: descarga de los modelos ========== -->
+<section id="panel-modelo" class="tarjeta panel-modelo oculto">
+  <h2>Primer arranque · descargar el modelo</h2>
+  <p class="ayuda">
+    La aplicación no incluye los pesos del modelo. Hacen falta <b>dos archivos</b>
+    del repositorio oficial en Hugging Face: el modelo principal y su
+    <i>mmproj</i> (el vocoder que convierte los tokens en sonido).
+    Se descargan una sola vez y quedan en la carpeta <code>modelo/</code>.
+  </p>
+
+  <div class="campos">
+    <label>
+      <span>Modelo principal</span>
+      <select id="quant-modelo"></select>
+      <small>Q4_K_M va de sobra para la mayoría de equipos</small>
+    </label>
+    <label>
+      <span>Proyector / vocoder (mmproj)</span>
+      <select id="quant-mmproj"></select>
+      <small>Necesario: sin él no hay audio</small>
+    </label>
+  </div>
+
+  <div class="acciones">
+    <button id="btn-descargar-modelo" class="btn btn-primario">Descargar ahora</button>
+    <button id="btn-cancelar-descarga" class="btn btn-peligro oculto">Cancelar</button>
+    <a id="enlace-hf" class="btn btn-sec" target="_blank" rel="noopener">Ver en Hugging Face</a>
+  </div>
+
+  <div id="progreso-modelo" class="progreso oculto">
+    <div class="barra"><div id="barra-modelo"></div></div>
+    <span id="texto-modelo"></span>
+  </div>
+
+  <p class="ayuda pie-modelo">
+    ¿Prefieres la terminal? <code>python descargar_modelo.py</code> hace lo mismo,
+    y también reanuda una descarga interrumpida.
+  </p>
+</section>
+
+<main class="rejilla">
+
+  <!-- ================= VOCES ================= -->
+  <section class="tarjeta">
+    <h2>1 · Voz de referencia</h2>
+    <p class="ayuda">
+      Sube o graba entre 5 y 15 segundos de voz limpia. Sin referencia, el modelo
+      usa su voz por defecto.
+    </p>
+
+    <div class="pestanas" role="tablist">
+      <button class="pestana activa" data-panel="p-biblioteca" role="tab">Biblioteca</button>
+      <button class="pestana" data-panel="p-grabar" role="tab">Grabar</button>
+      <button class="pestana" data-panel="p-subir" role="tab">Subir</button>
+    </div>
+
+    <div id="p-biblioteca" class="panel">
+      <div id="lista-voces" class="lista-voces"></div>
+    </div>
+
+    <div id="p-grabar" class="panel oculto">
+      <div class="grabadora">
+        <button id="btn-grabar" class="btn btn-grabar">● Grabar</button>
+        <span id="cronometro" class="cronometro">0.0 s</span>
+        <canvas id="vumetro" width="240" height="40"></canvas>
+      </div>
+      <audio id="previo-grabacion" controls class="oculto"></audio>
+      <div id="guardar-grabacion" class="oculto">
+        <input id="nombre-grabacion" type="text" placeholder="Nombre de la voz" maxlength="60">
+        <input id="trans-grabacion" type="text" placeholder="Transcripción del audio (opcional, mejora la clonación)" maxlength="300">
+        <button id="btn-guardar-grabacion" class="btn btn-primario">Guardar voz</button>
+      </div>
+    </div>
+
+    <div id="p-subir" class="panel oculto">
+      <label class="zona-archivo" id="zona-archivo">
+        <input id="archivo-voz" type="file" accept="audio/*,video/*" hidden>
+        <span id="texto-archivo">Arrastra un audio aquí o haz clic para elegirlo</span>
+        <small>wav · mp3 · m4a · ogg · flac · webm</small>
+      </label>
+      <input id="nombre-archivo-voz" type="text" placeholder="Nombre de la voz" maxlength="60">
+      <input id="trans-archivo-voz" type="text" placeholder="Transcripción del audio (opcional, mejora la clonación)" maxlength="300">
+      <button id="btn-subir-voz" class="btn btn-primario" disabled>Añadir a la biblioteca</button>
+    </div>
+  </section>
+
+  <div class="columna-principal">
+
+  <nav class="modos" role="tablist">
+    <button class="modo activa" data-vista="vista-simple" role="tab">🎤 Voz simple</button>
+    <button class="modo" data-vista="vista-guion" role="tab">🎭 Guion multivoz</button>
+  </nav>
+
+  <!-- ================= TEXTO ================= -->
+  <section id="vista-simple" class="tarjeta">
+    <h2>2 · Texto a sintetizar</h2>
+
+    <!-- ---- Dictado por micrófono ---- -->
+    <div class="dictado">
+      <div class="dictado-barra">
+        <button id="btn-dictado" class="btn btn-dictar">🎙️ Dictar</button>
+        <canvas id="nivel-voz" width="260" height="34"></canvas>
+        <span id="dictado-estado" class="dictado-estado">Pulsa para hablar</span>
+        <button id="btn-dictado-ajustes" class="icono-btn" title="Ajustes del dictado">⚙</button>
+      </div>
+
+      <div id="dictado-ajustes" class="dictado-ajustes oculto">
+        <div class="campos campos-avanzados">
+          <label>
+            <span>Modelo de voz a texto</span>
+            <select id="stt_modelo"></select>
+            <small id="stt-info">Whisper, en local</small>
+          </label>
+          <label>
+            <span>Procesamiento</span>
+            <select id="stt_dispositivo">
+              <option value="auto">Automático</option>
+              <option value="cuda">GPU (CUDA)</option>
+              <option value="cpu">Solo CPU</option>
+            </select>
+          </label>
+          <label>
+            <span>Pausa que cierra la frase <b id="v-silencio">1200</b> ms</span>
+            <input id="dictado_silencio_ms" type="range" min="400" max="3000" step="100" value="1200">
+            <small>Cuánto callas antes de que genere</small>
+          </label>
+          <label>
+            <span>Sensibilidad <b id="v-sensibilidad">2.5</b></span>
+            <input id="dictado_sensibilidad" type="range" min="1.2" max="6" step="0.1" value="2.5">
+            <small>Más baja = capta voz más floja</small>
+          </label>
+        </div>
+        <div class="opciones-dictado">
+          <label class="casilla">
+            <input id="dictado_autogenerar" type="checkbox" checked>
+            <span>Generar el audio automáticamente al terminar de hablar</span>
+          </label>
+          <label class="casilla">
+            <input id="dictado_continuo" type="checkbox" checked>
+            <span>Seguir escuchando después de generar</span>
+          </label>
+          <label class="casilla">
+            <input id="stt_comandos" type="checkbox" checked>
+            <span>Comandos hablados: «abre interrogación», «coma», «punto y aparte»…</span>
+          </label>
+          <label class="casilla">
+            <input id="stt_pulir_llm" type="checkbox">
+            <span>Repasar los signos con el modelo de texto
+              <small>(hay que tenerlo cargado en «Guion multivoz»; afina las exclamaciones)</small></span>
+          </label>
+        </div>
+        <p class="ayuda pie-dictado">
+          Los signos <b>¿?</b> y <b>¡!</b> se sacan de tu entonación, y si falta el de
+          apertura se añade solo. Para asegurarlos, dilos:
+          <code>abre interrogación … cierra interrogación</code>.
+          <button id="btn-stt-parar" class="btn-enlace">Descargar el modelo de memoria</button>
+        </p>
+      </div>
+    </div>
+
+    <textarea id="texto" rows="8" maxlength="20000"
+      placeholder="Escribe aquí lo que quieres que diga la voz… o pulsa 🎙️ Dictar"></textarea>
+    <div class="fila-info">
+      <span id="contador">0 caracteres · 0 bloques · ≈0 s</span>
+      <button id="btn-ejemplo" class="btn-enlace">Insertar ejemplo</button>
+    </div>
+
+    <div class="campos">
+      <label>
+        <span>Idioma</span>
+        <select id="idioma"></select>
+      </label>
+      <label>
+        <span>Procesamiento</span>
+        <select id="dispositivo"></select>
+      </label>
+    </div>
+
+    <details class="avanzado">
+      <summary>Ajustes avanzados</summary>
+      <div class="campos campos-avanzados">
+        <label>
+          <span>Temperatura <b id="v-temp">0.80</b></span>
+          <input id="temp" type="range" min="0.1" max="1.5" step="0.05" value="0.8">
+          <small>Baja = estable · Alta = expresiva</small>
+        </label>
+        <label>
+          <span>Top-P <b id="v-top_p">0.95</b></span>
+          <input id="top_p" type="range" min="0.1" max="1" step="0.01" value="0.95">
+          <small>Diversidad del muestreo</small>
+        </label>
+        <label>
+          <span>Top-K</span>
+          <input id="top_k" type="number" min="0" max="200" value="40">
+          <small>0 = desactivado</small>
+        </label>
+        <label>
+          <span>Semilla</span>
+          <input id="semilla" type="number" min="-1" value="-1">
+          <small>-1 = aleatoria en cada intento</small>
+        </label>
+        <label>
+          <span>Caracteres por bloque</span>
+          <input id="chars_por_bloque" type="number" min="80" max="600" step="10" value="280">
+          <small>El texto largo se divide y se une al final</small>
+        </label>
+        <label>
+          <span>Pausa entre bloques (ms)</span>
+          <input id="pausa_ms" type="number" min="0" max="2000" step="25" value="150">
+          <small>Silencio insertado en las uniones</small>
+        </label>
+        <label>
+          <span>Máx. frames por bloque</span>
+          <input id="max_frames" type="number" min="120" max="6000" step="60" value="1200">
+          <small>12 frames = 1 segundo de audio</small>
+        </label>
+        <label>
+          <span>Hilos de CPU</span>
+          <input id="hilos" type="number" min="0" max="128" value="0">
+          <small>0 = automático</small>
+        </label>
+      </div>
+      <button id="btn-guardar-ajustes" class="btn btn-sec">Guardar como predeterminados</button>
+    </details>
+
+    <div class="acciones">
+      <button id="btn-generar" class="btn btn-primario btn-grande">Generar audio</button>
+      <button id="btn-cancelar" class="btn btn-peligro oculto">Cancelar</button>
+    </div>
+
+    <div id="progreso" class="progreso oculto">
+      <div class="barra"><div id="barra-relleno"></div></div>
+      <span id="texto-progreso"></span>
+    </div>
+
+    <details id="caja-consola" class="consola-caja oculto">
+      <summary>Registro de llama.cpp</summary>
+      <pre id="consola" class="consola"></pre>
+    </details>
+
+    <div id="resultado" class="resultado oculto">
+      <audio id="reproductor" controls></audio>
+      <div class="fila-resultado">
+        <span id="info-resultado"></span>
+        <a id="descargar" class="btn btn-sec" download>Descargar WAV</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= GUION MULTIVOZ ================= -->
+  <div id="vista-guion" class="oculto">
+
+    <!-- ---- Modelo de texto ---- -->
+    <section class="tarjeta">
+      <h2>Modelo de texto</h2>
+      <p class="ayuda">
+        Escribe la historia con un modelo que ya tengas en Ollama, servido por
+        llama.cpp. También vale cualquier <code>.gguf</code> que dejes en
+        <code>modelos-texto/</code>.
+      </p>
+
+      <div class="campos campos-llm">
+        <label>
+          <span>Modelo</span>
+          <select id="llm-modelo"></select>
+        </label>
+        <label>
+          <span>Procesamiento</span>
+          <select id="llm-dispositivo"></select>
+        </label>
+        <label>
+          <span>Contexto (tokens)</span>
+          <input id="llm-contexto" type="number" min="512" max="131072" step="512" value="8192">
+        </label>
+        <label>
+          <span>Al sintetizar voz</span>
+          <select id="liberar_llm">
+            <option value="auto">Liberar la GPU si hace falta</option>
+            <option value="siempre">Liberar siempre</option>
+            <option value="nunca">Mantener el modelo cargado</option>
+          </select>
+          <small>Un LLM y el modelo de voz no siempre caben juntos en la VRAM</small>
+        </label>
+      </div>
+
+      <div class="acciones">
+        <button id="btn-llm-cargar" class="btn btn-primario">Cargar modelo</button>
+        <button id="btn-llm-parar" class="btn btn-sec oculto">Descargar de memoria</button>
+        <button id="btn-llm-probar" class="btn btn-sec">Comprobar compatibilidad</button>
+        <span id="llm-estado" class="estado-llm"><span class="punto"></span> sin cargar</span>
+      </div>
+
+      <details id="caja-llm-log" class="consola-caja oculto">
+        <summary>Registro de llama-server</summary>
+        <pre id="llm-log" class="consola"></pre>
+      </details>
+    </section>
+
+    <!-- ---- Escribir con IA ---- -->
+    <section class="tarjeta">
+      <h2>Escribir la historia</h2>
+      <textarea id="idea" rows="3" maxlength="4000"
+        placeholder="Ej: un cuento donde dos hermanas encuentran un dragón dormido en el desván de su abuela. Diálogo vivo y final tierno."></textarea>
+
+      <div class="campos campos-llm">
+        <label>
+          <span>Voces que intervienen</span>
+          <input id="n-personajes" type="number" min="0" max="12" value="3">
+          <small>0 = que decida el modelo</small>
+        </label>
+        <label>
+          <span>Extensión (palabras)</span>
+          <input id="n-palabras" type="number" min="0" max="4000" step="50" value="200">
+          <small>0 = libre</small>
+        </label>
+        <label>
+          <span>Creatividad <b id="v-llm_temp">0.85</b></span>
+          <input id="llm_temp" type="range" min="0.1" max="1.5" step="0.05" value="0.85">
+        </label>
+      </div>
+
+      <div class="acciones">
+        <button id="btn-escribir" class="btn btn-primario">✨ Escribir guion</button>
+        <button id="btn-parar-escritura" class="btn btn-peligro oculto">Parar</button>
+        <button id="btn-pegar" class="btn btn-sec">Pegar mi propio texto</button>
+        <select id="guiones-guardados" class="select-compacto"></select>
+      </div>
+
+      <div id="borrador-caja" class="oculto">
+        <div class="fila-info">
+          <span id="borrador-info">Escribiendo…</span>
+          <button id="btn-usar-borrador" class="btn-enlace">Convertir en guion</button>
+        </div>
+        <textarea id="borrador" rows="10" spellcheck="false"
+          placeholder="[NARRADOR] Aquí aparecerá el texto…&#10;[ELENA] Una línea por intervención."></textarea>
+      </div>
+    </section>
+
+    <!-- ---- Reparto ---- -->
+    <section id="caja-reparto" class="tarjeta oculto">
+      <h2>Reparto</h2>
+      <p class="ayuda">Qué voz pone cada personaje. Cambiarla aquí la aplica a todas sus intervenciones.</p>
+      <div id="reparto" class="reparto"></div>
+      <button id="btn-repartir" class="btn btn-sec">Repartir voces automáticamente</button>
+    </section>
+
+    <!-- ---- Guion ---- -->
+    <section id="caja-guion" class="tarjeta oculto">
+      <div class="cabecera-guion">
+        <h2>Guion</h2>
+        <input id="titulo-guion" type="text" maxlength="120" placeholder="Título de la historia">
+      </div>
+
+      <div id="segmentos" class="segmentos"></div>
+
+      <div class="acciones acciones-guion">
+        <button id="btn-anadir-seg" class="btn btn-sec">+ Añadir intervención</button>
+        <button id="btn-guardar-guion" class="btn btn-sec">Guardar guion</button>
+        <button id="btn-vaciar-guion" class="btn btn-sec">Empezar de cero</button>
+      </div>
+
+      <div class="acciones">
+        <button id="btn-generar-guion" class="btn btn-primario btn-grande">🎬 Generar audio completo</button>
+        <button id="btn-cancelar-guion" class="btn btn-peligro oculto">Cancelar</button>
+      </div>
+
+      <div id="progreso-guion" class="progreso oculto">
+        <div class="barra"><div id="barra-guion"></div></div>
+        <span id="texto-guion"></span>
+      </div>
+
+      <details id="caja-consola-guion" class="consola-caja oculto">
+        <summary>Registro de llama.cpp</summary>
+        <pre id="consola-guion" class="consola"></pre>
+      </details>
+
+      <div id="resultado-guion" class="resultado oculto">
+        <audio id="reproductor-guion" controls></audio>
+        <div class="fila-resultado">
+          <span id="info-guion"></span>
+          <span class="grupo-descargas">
+            <a id="descargar-guion" class="btn btn-sec" download>WAV</a>
+            <a id="descargar-srt" class="btn btn-sec" download>Subtítulos</a>
+            <button id="descargar-txt" class="btn btn-sec">Texto</button>
+          </span>
+        </div>
+        <div id="linea-tiempo" class="linea-tiempo"></div>
+      </div>
+    </section>
+
+  </div>
+
+  </div>
+
+  <!-- ================= HISTORIAL ================= -->
+  <section class="tarjeta tarjeta-ancha">
+    <h2>3 · Audios generados</h2>
+    <div id="historial" class="historial"></div>
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+<script src="/static/dictado.js"></script>
+<script src="/static/guion.js"></script>
+</body>
+</html>

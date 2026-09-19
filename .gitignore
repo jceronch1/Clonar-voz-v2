@@ -1,0 +1,41 @@
+# ---- Pesos de los modelos ---------------------------------------------------
+# Se descargan en la instalación; no viajan en el repositorio.
+modelo/*.gguf
+modelo/*.parte
+modelos-texto/*.gguf
+modelos-texto/*.parte
+
+# ---- Biblioteca de voces ----------------------------------------------------
+# Solo se publican las tres voces de ejemplo (Adam, David y Carla).
+# Cualquier voz que grabes o subas se queda en tu equipo.
+voces/*
+!voces/57ea101e6dce/
+!voces/00172557f774/
+!voces/8ccb865105b3/
+
+# ---- Resultados y datos del usuario -----------------------------------------
+salidas/
+guiones/
+config.json
+.compat-llm.json
+.tmp/
+
+# ---- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ---- Sistema ----------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# ---- Audio suelto en la raíz ------------------------------------------------
+/*.wav
+/*.mp3
+/*.srt

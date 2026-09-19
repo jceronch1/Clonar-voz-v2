@@ -1,0 +1,4 @@
+# Dictado por micrófono (opcional).
+# Arrastra ctranslate2 y, con GPU NVIDIA, las librerías de CUDA: son ~1 GB.
+# Sin esto la app funciona igual, solo que el botón "Dictar" aparece desactivado.
+faster-whisper>=1.1
